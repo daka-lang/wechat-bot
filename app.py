@@ -10,7 +10,7 @@ app = Flask(__name__)
 WECHAT_TOKEN = "wechat123456"
 COZE_API_KEY = "pat_QBqyqt7si3wJWXKLjgG2U4RMSv2wnQgsuRiUQ222IS1pWlVZYxzUo22ry6WJFLIV"
 COZE_BOT_ID = "7623699127591026742"
-COZE_API_URL = "https://api.coze.cn/v1/chat"
+COZE_API_URL = "https://api.coze.com/v1/chat"
 
 # ========== 添加这个根路由（在第108行之前） ==========
 @app.route('/')
