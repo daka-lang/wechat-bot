@@ -1,16 +1,25 @@
 from flask import Flask, request
 import hashlib
 import xml.etree.ElementTree as ET
+import requests
 import time
 
 app = Flask(__name__)
 
+# ========== 配置信息 ==========
 WECHAT_TOKEN = "wechat123456"
 
+# 扣子配置（国内版 - 使用正确的 v3 接口）
+COZE_API_KEY = "pat_8nHPY6IBnTz67KSF48N1H18dTgeWso7z3bYyFPUxzSytsGCHrFNJFPnVlqsIavMf"
+COZE_BOT_ID = "7623699127591026742"
+COZE_API_URL = "https://api.coze.cn/v3/chat"  # 正确的 API 地址
+
+# ========== 首页 ==========
 @app.route('/')
 def index():
     return "微信机器人运行中", 200
 
+# ========== 微信接口 ==========
 @app.route('/wechat', methods=['GET', 'POST'])
 def wechat():
     # GET请求：微信验证
@@ -30,7 +39,7 @@ def wechat():
             return echostr
         return "验证失败", 403
     
-    # POST请求：接收消息并回复
+    # POST请求：接收消息
     if request.method == 'POST':
         try:
             xml_data = request.data
@@ -43,8 +52,8 @@ def wechat():
             if msg_type == 'text':
                 user_text = root.find('Content').text
                 
-                # 固定回复内容（临时方案）
-                reply_text = f"收到你的消息：{user_text}\n\n（AI智能回复正在配置中，即将上线，敬请期待！）"
+                # 调用扣子AI
+                reply_text = call_coze_api(user_text, from_user)
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -60,6 +69,47 @@ def wechat():
         except Exception as e:
             print(f"错误: {e}")
             return "success"
+
+# ========== 调用扣子API ==========
+def call_coze_api(query, user_id):
+    """调用扣子AI Bot - 使用 v3/chat 接口"""
+    headers = {
+        "Authorization": f"Bearer {COZE_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "bot_id": COZE_BOT_ID,
+        "user_id": user_id,
+        "query": query,
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(COZE_API_URL, json=payload, headers=headers, timeout=30)
+        
+        print(f"扣子API响应状态: {response.status_code}")
+        print(f"扣子API响应内容: {response.text}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            # v3 接口返回格式可能不同，尝试多种解析方式
+            if 'content' in data:
+                return data['content']
+            elif 'message' in data:
+                return data['message']
+            elif 'choices' in data and len(data['choices']) > 0:
+                return data['choices'][0].get('message', {}).get('content', '抱歉，我无法回答')
+            elif 'messages' in data and len(data['messages']) > 0:
+                return data['messages'][0].get('content', '抱歉，我无法回答')
+            else:
+                return f"AI回复解析失败，请稍后重试"
+        else:
+            return f"AI服务错误: {response.status_code}"
+            
+    except Exception as e:
+        print(f"扣子API调用失败: {e}")
+        return "系统繁忙，请稍后重试"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
