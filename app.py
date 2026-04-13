@@ -10,7 +10,7 @@ app = Flask(__name__)
 WECHAT_TOKEN = "wechat123456"
 
 # 扣子配置（国内版）
-COZE_API_KEY = "pat_8nHPY6IBnTz67KSF48N1H18dTgeWso7z3bYyFPUxzSytsGCHrFNJFPnVlqsIavMf"
+COZE_API_KEY = "pat_QBqyqt7si3wJWXKLjgG2U4RMSv2wnQgsuRiUQ222IS1pWlVZYxzUo22ry6WJFLIV"
 COZE_BOT_ID = "7623699127591026742"
 COZE_API_URL = "https://api.coze.cn/v1/chat"  # 国内版地址
 
