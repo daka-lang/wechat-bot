@@ -1,21 +1,11 @@
 from flask import Flask, request
 import hashlib
 import xml.etree.ElementTree as ET
-import requests
 import time
-import json
 
 app = Flask(__name__)
 
 WECHAT_TOKEN = "wechat123456"
-
-# ========== 扣子配置 ==========
-COZE_API_KEY = "pat_Dh0dWApmsdIHHBY3M3YHSsXu7eBUxb73LAFi3PsskirbkulAfnwP1qN3uApnrKhl"
-COZE_BOT_ID = "7623699127591026742"
-
-# 扣子 API 地址
-COZE_CHAT_URL = "https://api.coze.cn/v3/chat"
-COZE_RETRIEVE_URL = "https://api.coze.cn/v1/chat/message/list"
 
 @app.route('/')
 def index():
@@ -51,9 +41,8 @@ def wechat():
             if msg_type == 'text':
                 user_text = root.find('Content').text
                 
-                print(f"收到消息: {user_text}")
-                
-                reply_text = call_coze(user_text)
+                # 固定回复（先让机器人能正常回复）
+                reply_text = f"收到你的消息：{user_text}\n\n（AI智能回复正在升级中，即将上线，敬请期待！）"
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -69,78 +58,6 @@ def wechat():
         except Exception as e:
             print(f"错误: {e}")
             return "success"
-
-def call_coze(user_message):
-    """调用扣子 API"""
-    headers = {
-        "Authorization": f"Bearer {COZE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    # 第一步：发起对话
-    chat_payload = {
-        "bot_id": COZE_BOT_ID,
-        "user_id": "wechat_user",
-        "query": user_message,
-        "stream": False
-    }
-    
-    try:
-        # 发起对话
-        response = requests.post(COZE_CHAT_URL, json=chat_payload, headers=headers, timeout=30)
-        result = response.json()
-        print(f"发起对话响应: {result}")
-        
-        # 检查是否成功
-        if result.get('code') != 0:
-            return f"AI服务错误: {result.get('msg', '未知错误')}"
-        
-        # 获取对话ID
-        chat_id = result.get('data', {}).get('id')
-        if not chat_id:
-            return "对话初始化失败"
-        
-        # 第二步：轮询获取回复（最多10次，每次等待1秒）
-        for i in range(10):
-            time.sleep(1)
-            
-            # 查询消息列表
-            retrieve_payload = {
-                "chat_id": chat_id
-            }
-            retrieve_response = requests.post(
-                COZE_RETRIEVE_URL, 
-                json=retrieve_payload, 
-                headers=headers, 
-                timeout=10
-            )
-            retrieve_result = retrieve_response.json()
-            print(f"第{i+1}次查询: {retrieve_result}")
-            
-            # 检查状态
-            if retrieve_result.get('code') != 0:
-                continue
-                
-            messages = retrieve_result.get('data', [])
-            for msg in messages:
-                if msg.get('role') == 'assistant':
-                    content = msg.get('content')
-                    if content:
-                        return content
-            
-            # 检查是否完成
-            status = retrieve_result.get('data', {}).get('status')
-            if status == 'completed':
-                # 再尝试获取一次消息
-                continue
-            elif status == 'failed':
-                return "AI处理失败"
-        
-        return "AI响应超时，请稍后再试"
-        
-    except Exception as e:
-        print(f"扣子调用异常: {e}")
-        return f"系统错误: {str(e)[:50]}"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
