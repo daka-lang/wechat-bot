@@ -1,11 +1,21 @@
 from flask import Flask, request
 import hashlib
 import xml.etree.ElementTree as ET
+import requests
 import time
 
 app = Flask(__name__)
 
 WECHAT_TOKEN = "wechat123456"
+
+# ========== DeepSeek 配置 ==========
+DEEPSEEK_API_KEY = "sk-a8393c12ec6445989eb1bcf0fb1f0229" 
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+# 系统提示词（定义AI的角色）
+SYSTEM_PROMPT = """你是大咖素质训练营的客服助手，请友好、热情地回答用户的问题。
+训练营主要提供素质教育和能力提升相关课程。
+回答要简洁、有帮助，保持礼貌和专业的语气。"""
 
 @app.route('/')
 def index():
@@ -43,15 +53,10 @@ def wechat():
             if msg_type == 'text':
                 user_text = root.find('Content').text
                 
-                # 固定回复内容（可以根据不同消息自定义）
-                if "你好" in user_text or "您好" in user_text:
-                    reply_text = "你好呀！我是大咖素质训练营的客服助手，有什么可以帮你的吗？"
-                elif "谢谢" in user_text:
-                    reply_text = "不客气！有问题随时问我哦~"
-                elif "帮助" in user_text or "help" in user_text.lower():
-                    reply_text = "你可以问我关于大咖素质训练营的任何问题，我会尽力帮你解答！"
-                else:
-                    reply_text = f"收到你的消息：{user_text}\n\n（AI智能回复正在开发中，即将上线，敬请期待！）"
+                print(f"收到用户消息: {user_text}")
+                
+                # 调用 DeepSeek AI
+                reply_text = call_deepseek(user_text)
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -67,6 +72,39 @@ def wechat():
         except Exception as e:
             print(f"错误: {e}")
             return "success"
+
+def call_deepseek(user_message):
+    """调用 DeepSeek API"""
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ],
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=10)
+        
+        print(f"DeepSeek 响应状态: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            reply = data['choices'][0]['message']['content']
+            return reply
+        else:
+            print(f"DeepSeek 错误: {response.text}")
+            return "AI服务暂时不可用，请稍后再试"
+            
+    except Exception as e:
+        print(f"DeepSeek 调用失败: {e}")
+        return "系统繁忙，请稍后再试"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
