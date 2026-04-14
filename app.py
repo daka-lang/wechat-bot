@@ -16,7 +16,7 @@ WECHAT_TOKEN = "wechat123456"
 # 扣子配置
 COZE_API_KEY = "pat_Dh0dWApmsdIHHBY3M3YHSsXu7eBUxb73LAFi3PsskirbkulAfnwP1qN3uApnrKhl"
 COZE_BOT_ID = "7623699127591026742"
-COZE_API_URL = "https://api.coze.cn/v3/chat"
+COZE_API_URL = "https://api.coze.cn/v1/chat"  # 同步，简单
 
 @app.route('/')
 def index():
