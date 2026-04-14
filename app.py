@@ -3,19 +3,19 @@ import hashlib
 import xml.etree.ElementTree as ET
 import requests
 import time
+import json
 
 app = Flask(__name__)
 
 WECHAT_TOKEN = "wechat123456"
 
-# ========== DeepSeek 配置 ==========
-DEEPSEEK_API_KEY = "sk-a8393c12ec6445989eb1bcf0fb1f0229" 
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+# ========== 扣子配置 ==========
+COZE_API_KEY = "pat_Dh0dWApmsdIHHBY3M3YHSsXu7eBUxb73LAFi3PsskirbkulAfnwP1qN3uApnrKhl"
+COZE_BOT_ID = "7623699127591026742"
 
-# 系统提示词（定义AI的角色）
-SYSTEM_PROMPT = """你是大咖素质训练营的客服助手，请友好、热情地回答用户的问题。
-训练营主要提供素质教育和能力提升相关课程。
-回答要简洁、有帮助，保持礼貌和专业的语气。"""
+# 扣子 API 地址
+COZE_CHAT_URL = "https://api.coze.cn/v3/chat"
+COZE_RETRIEVE_URL = "https://api.coze.cn/v1/chat/message/list"
 
 @app.route('/')
 def index():
@@ -23,7 +23,6 @@ def index():
 
 @app.route('/wechat', methods=['GET', 'POST'])
 def wechat():
-    # GET请求：微信验证
     if request.method == 'GET':
         signature = request.args.get('signature', '')
         timestamp = request.args.get('timestamp', '')
@@ -40,7 +39,6 @@ def wechat():
             return echostr
         return "验证失败", 403
     
-    # POST请求：接收消息
     if request.method == 'POST':
         try:
             xml_data = request.data
@@ -53,10 +51,9 @@ def wechat():
             if msg_type == 'text':
                 user_text = root.find('Content').text
                 
-                print(f"收到用户消息: {user_text}")
+                print(f"收到消息: {user_text}")
                 
-                # 调用 DeepSeek AI
-                reply_text = call_deepseek(user_text)
+                reply_text = call_coze(user_text)
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -73,38 +70,77 @@ def wechat():
             print(f"错误: {e}")
             return "success"
 
-def call_deepseek(user_message):
-    """调用 DeepSeek API"""
+def call_coze(user_message):
+    """调用扣子 API"""
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {COZE_API_KEY}",
         "Content-Type": "application/json"
     }
     
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
-        ],
+    # 第一步：发起对话
+    chat_payload = {
+        "bot_id": COZE_BOT_ID,
+        "user_id": "wechat_user",
+        "query": user_message,
         "stream": False
     }
     
     try:
-        response = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=10)
+        # 发起对话
+        response = requests.post(COZE_CHAT_URL, json=chat_payload, headers=headers, timeout=30)
+        result = response.json()
+        print(f"发起对话响应: {result}")
         
-        print(f"DeepSeek 响应状态: {response.status_code}")
+        # 检查是否成功
+        if result.get('code') != 0:
+            return f"AI服务错误: {result.get('msg', '未知错误')}"
         
-        if response.status_code == 200:
-            data = response.json()
-            reply = data['choices'][0]['message']['content']
-            return reply
-        else:
-            print(f"DeepSeek 错误: {response.text}")
-            return "AI服务暂时不可用，请稍后再试"
+        # 获取对话ID
+        chat_id = result.get('data', {}).get('id')
+        if not chat_id:
+            return "对话初始化失败"
+        
+        # 第二步：轮询获取回复（最多10次，每次等待1秒）
+        for i in range(10):
+            time.sleep(1)
             
+            # 查询消息列表
+            retrieve_payload = {
+                "chat_id": chat_id
+            }
+            retrieve_response = requests.post(
+                COZE_RETRIEVE_URL, 
+                json=retrieve_payload, 
+                headers=headers, 
+                timeout=10
+            )
+            retrieve_result = retrieve_response.json()
+            print(f"第{i+1}次查询: {retrieve_result}")
+            
+            # 检查状态
+            if retrieve_result.get('code') != 0:
+                continue
+                
+            messages = retrieve_result.get('data', [])
+            for msg in messages:
+                if msg.get('role') == 'assistant':
+                    content = msg.get('content')
+                    if content:
+                        return content
+            
+            # 检查是否完成
+            status = retrieve_result.get('data', {}).get('status')
+            if status == 'completed':
+                # 再尝试获取一次消息
+                continue
+            elif status == 'failed':
+                return "AI处理失败"
+        
+        return "AI响应超时，请稍后再试"
+        
     except Exception as e:
-        print(f"DeepSeek 调用失败: {e}")
-        return "系统繁忙，请稍后再试"
+        print(f"扣子调用异常: {e}")
+        return f"系统错误: {str(e)[:50]}"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
