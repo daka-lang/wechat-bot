@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 WECHAT_TOKEN = "wechat123456"
 
 # 扣子配置
-COZE_API_KEY = "pat_8nHPY6IBnTz67KSF48N1H18dTgeWso7z3bYyFPUxzSytsGCHrFNJFPnVlqsIavMf"
+COZE_API_KEY = "pat_Dh0dWApmsdIHHBY3M3YHSsXu7eBUxb73LAFi3PsskirbkulAfnwP1qN3uApnrKhl"
 COZE_BOT_ID = "7623699127591026742"
 COZE_API_URL = "https://api.coze.cn/v3/chat"
 
