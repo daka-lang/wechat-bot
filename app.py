@@ -1,22 +1,11 @@
 from flask import Flask, request
 import hashlib
 import xml.etree.ElementTree as ET
-import requests
 import time
-import logging
 
 app = Flask(__name__)
 
-# 设置日志
-logging.basicConfig(level=logging.INFO)
-
-# ========== 配置信息 ==========
 WECHAT_TOKEN = "wechat123456"
-
-# 扣子配置
-COZE_API_KEY = "pat_Dh0dWApmsdIHHBY3M3YHSsXu7eBUxb73LAFi3PsskirbkulAfnwP1qN3uApnrKhl"
-COZE_BOT_ID = "7623699127591026742"
-COZE_API_URL = "https://api.coze.cn/v1/chat"  # 同步，简单
 
 @app.route('/')
 def index():
@@ -54,12 +43,15 @@ def wechat():
             if msg_type == 'text':
                 user_text = root.find('Content').text
                 
-                app.logger.info(f"收到用户消息: {user_text} from {from_user}")
-                
-                # 调用扣子AI
-                reply_text = call_coze_api(user_text, from_user)
-                
-                app.logger.info(f"回复内容: {reply_text}")
+                # 固定回复内容（可以根据不同消息自定义）
+                if "你好" in user_text or "您好" in user_text:
+                    reply_text = "你好呀！我是大咖素质训练营的客服助手，有什么可以帮你的吗？"
+                elif "谢谢" in user_text:
+                    reply_text = "不客气！有问题随时问我哦~"
+                elif "帮助" in user_text or "help" in user_text.lower():
+                    reply_text = "你可以问我关于大咖素质训练营的任何问题，我会尽力帮你解答！"
+                else:
+                    reply_text = f"收到你的消息：{user_text}\n\n（AI智能回复正在开发中，即将上线，敬请期待！）"
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -73,49 +65,8 @@ def wechat():
             return "success"
             
         except Exception as e:
-            app.logger.error(f"处理消息出错: {e}")
+            print(f"错误: {e}")
             return "success"
-
-def call_coze_api(query, user_id):
-    """调用扣子AI Bot"""
-    headers = {
-        "Authorization": f"Bearer {COZE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "bot_id": COZE_BOT_ID,
-        "user_id": user_id,
-        "query": query,
-        "stream": False
-    }
-    
-    try:
-        app.logger.info(f"调用扣子API: {COZE_API_URL}")
-        response = requests.post(COZE_API_URL, json=payload, headers=headers, timeout=30)
-        
-        app.logger.info(f"扣子API状态码: {response.status_code}")
-        app.logger.info(f"扣子API响应: {response.text[:500]}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            # 尝试多种可能的返回格式
-            if 'content' in data:
-                return data['content']
-            elif 'message' in data:
-                return data['message']
-            elif 'choices' in data and len(data['choices']) > 0:
-                return data['choices'][0].get('message', {}).get('content', '无法解析回复')
-            elif 'output' in data:
-                return data['output']
-            else:
-                return f"解析失败，原始返回: {response.text[:100]}"
-        else:
-            return f"API错误({response.status_code})"
-            
-    except Exception as e:
-        app.logger.error(f"扣子API异常: {e}")
-        return f"系统错误: {str(e)[:50]}"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
