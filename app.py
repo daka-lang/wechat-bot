@@ -1,20 +1,26 @@
-from flask import Flask, request
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from flask import Flask, request, make_response
 import hashlib
 import xml.etree.ElementTree as ET
 import requests
 import time
+import json
 
 app = Flask(__name__)
+
+# 设置响应编码
+app.config['JSON_AS_ASCII'] = False
 
 WECHAT_TOKEN = "wechat123456"
 
 # ========== 扣子配置 ==========
-COZE_API_KEY = "pat_你新生成的令牌"  # 替换成你的
+COZE_API_KEY = "pat_8nHPY6IBnTz67KSF48N1H18dTgeWso7z3bYyFPUxzSytsGCHrFNJFPnVlqsIavMf"
 COZE_BOT_ID = "7623699127591026742"
 
 # 扣子 API 地址
 COZE_CHAT_URL = "https://api.coze.cn/v3/chat"
-COZE_RETRIEVE_URL = "https://api.coze.cn/v3/chat/retrieve"  # 修改为正确的地址
+COZE_RETRIEVE_URL = "https://api.coze.cn/v3/chat/retrieve"
 
 @app.route('/')
 def index():
@@ -54,6 +60,9 @@ def wechat():
                 
                 reply_text = call_coze(user_text)
                 
+                # 确保回复内容使用 UTF-8 编码
+                reply_text = reply_text.encode('utf-8').decode('utf-8')
+                
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
 <FromUserName><![CDATA[{to_user}]]></FromUserName>
@@ -61,7 +70,10 @@ def wechat():
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[{reply_text}]]></Content>
 </xml>"""
-                return reply_xml
+                
+                response = make_response(reply_xml)
+                response.headers['Content-Type'] = 'application/xml; charset=utf-8'
+                return response
             
             return "success"
             
@@ -88,7 +100,7 @@ def call_coze(user_message):
         # 发起对话
         response = requests.post(COZE_CHAT_URL, json=chat_payload, headers=headers, timeout=30)
         result = response.json()
-        print(f"发起对话响应: {result}")
+        print(f"发起对话响应: {json.dumps(result, ensure_ascii=False)}")
         
         if result.get('code') != 0:
             return f"AI服务错误: {result.get('msg', '未知错误')}"
@@ -99,8 +111,8 @@ def call_coze(user_message):
         if not chat_id or not conversation_id:
             return "对话初始化失败"
         
-        # 第二步：轮询获取回复（最多10次，每次等待1秒）
-        for i in range(10):
+        # 第二步：轮询获取回复（最多15次，每次等待1秒）
+        for i in range(15):
             time.sleep(1)
             
             retrieve_payload = {
@@ -114,10 +126,11 @@ def call_coze(user_message):
                 timeout=10
             )
             retrieve_result = retrieve_response.json()
-            print(f"第{i+1}次查询: {retrieve_result}")
+            print(f"第{i+1}次查询: {json.dumps(retrieve_result, ensure_ascii=False)}")
             
             if retrieve_result.get('code') == 0:
                 data = retrieve_result.get('data', {})
+                
                 # 尝试多种可能的回复字段
                 if 'content' in data:
                     return data['content']
@@ -127,17 +140,25 @@ def call_coze(user_message):
                             return msg.get('content', '')
                 elif 'answer' in data:
                     return data['answer']
+                
+                # 检查是否有回复内容
+                if data.get('status') == 'completed':
+                    # 如果状态完成但没有找到回复，继续轮询
+                    continue
+            elif retrieve_result.get('code') == 4000:
+                # 接口不存在，返回友好提示
+                return "AI服务正在升级中，请稍后再试"
             
             # 检查状态
             status = retrieve_result.get('data', {}).get('status')
             if status == 'failed':
-                return "AI处理失败"
+                return "AI处理失败，请稍后再试"
         
         return "AI响应超时，请稍后再试"
         
     except Exception as e:
         print(f"扣子调用异常: {e}")
-        return f"系统错误: {str(e)[:50]}"
+        return f"系统错误，请稍后再试"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
