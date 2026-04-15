@@ -15,7 +15,7 @@ app.config['JSON_AS_ASCII'] = False
 WECHAT_TOKEN = "wechat123456"
 
 # ========== 扣子配置 ==========
-COZE_API_KEY = "pat_8nHPY6IBnTz67KSF48N1H18dTgeWso7z3bYyFPUxzSytsGCHrFNJFPnVlqsIavMf"
+COZE_API_KEY = "pat_J5jLsqB3ZW7GaVrZ0DzFytGmYI997D3N2LSxMmWmrkhVmxUBk9mjA6X4BRflbCkk"
 COZE_BOT_ID = "7623699127591026742"
 
 # 扣子 API 地址
