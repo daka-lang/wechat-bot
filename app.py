@@ -9,16 +9,11 @@ import json
 
 app = Flask(__name__)
 
-# 设置响应编码
-app.config['JSON_AS_ASCII'] = False
-
 WECHAT_TOKEN = "wechat123456"
 
 # ========== 扣子配置 ==========
 COZE_API_KEY = "pat_J5jLsqB3ZW7GaVrZ0DzFytGmYI997D3N2LSxMmWmrkhVmxUBk9mjA6X4BRflbCkk"
 COZE_BOT_ID = "7623699127591026742"
-
-# 扣子 API 地址
 COZE_CHAT_URL = "https://api.coze.cn/v3/chat"
 COZE_RETRIEVE_URL = "https://api.coze.cn/v3/chat/retrieve"
 
@@ -55,13 +50,9 @@ def wechat():
             
             if msg_type == 'text':
                 user_text = root.find('Content').text
-                
                 print(f"收到消息: {user_text}")
                 
                 reply_text = call_coze(user_text)
-                
-                # 确保回复内容使用 UTF-8 编码
-                reply_text = reply_text.encode('utf-8').decode('utf-8')
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -88,7 +79,7 @@ def call_coze(user_message):
         "Content-Type": "application/json"
     }
     
-    # 第一步：发起对话
+    # 发起对话
     chat_payload = {
         "bot_id": COZE_BOT_ID,
         "user_id": "wechat_user",
@@ -97,7 +88,6 @@ def call_coze(user_message):
     }
     
     try:
-        # 发起对话
         response = requests.post(COZE_CHAT_URL, json=chat_payload, headers=headers, timeout=30)
         result = response.json()
         print(f"发起对话响应: {json.dumps(result, ensure_ascii=False)}")
@@ -108,10 +98,10 @@ def call_coze(user_message):
         chat_id = result.get('data', {}).get('id')
         conversation_id = result.get('data', {}).get('conversation_id')
         
-        if not chat_id or not conversation_id:
+        if not chat_id:
             return "对话初始化失败"
         
-        # 第二步：轮询获取回复（最多15次，每次等待1秒）
+        # 轮询获取回复
         for i in range(15):
             time.sleep(1)
             
@@ -131,28 +121,19 @@ def call_coze(user_message):
             if retrieve_result.get('code') == 0:
                 data = retrieve_result.get('data', {})
                 
-                # 尝试多种可能的回复字段
-                if 'content' in data:
+                # 尝试获取回复内容
+                if 'content' in data and data['content']:
                     return data['content']
                 elif 'messages' in data:
                     for msg in data['messages']:
                         if msg.get('role') == 'assistant':
                             return msg.get('content', '')
-                elif 'answer' in data:
-                    return data['answer']
                 
-                # 检查是否有回复内容
+                # 检查状态
                 if data.get('status') == 'completed':
-                    # 如果状态完成但没有找到回复，继续轮询
                     continue
-            elif retrieve_result.get('code') == 4000:
-                # 接口不存在，返回友好提示
-                return "AI服务正在升级中，请稍后再试"
-            
-            # 检查状态
-            status = retrieve_result.get('data', {}).get('status')
-            if status == 'failed':
-                return "AI处理失败，请稍后再试"
+                elif data.get('status') == 'failed':
+                    return "AI处理失败"
         
         return "AI响应超时，请稍后再试"
         
