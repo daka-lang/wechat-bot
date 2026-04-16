@@ -12,7 +12,7 @@ app = Flask(__name__)
 WECHAT_TOKEN = "wechat123456"
 
 # ========== DeepSeek 配置 ==========
-DEEPSEEK_API_KEY = "sk-你的密钥"  # 替换成你的 DeepSeek API Key
+DEEPSEEK_API_KEY = "sk-e22a139c77804719aa566dc576f7ef39" 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
 # ========== 系统提示词（整合你的智能体提示词和知识库）==========
