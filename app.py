@@ -5,57 +5,25 @@ import hashlib
 import xml.etree.ElementTree as ET
 import requests
 import time
-import sys
+import json
 
 app = Flask(__name__)
 
-# 强制 stdout 实时输出
-sys.stdout.reconfigure(line_buffering=True)
-
 WECHAT_TOKEN = "wechat123456"
 
-# ========== DeepSeek 配置 ==========
-DEEPSEEK_API_KEY = "sk-e22a139c77804719aa566dc576f7ef39"  
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+# ========== 智谱清言配置 ==========
+ZHIPU_API_KEY = "c937dde0c0454b288646b3cdcbda6fda.yJPDxhrLCHuVDGhz"
+ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
-# ========== 系统提示词 ==========
-SYSTEM_PROMPT = """你是大咖素质训练营专业的智能客服，主要通过微信服务号私信为客户提供咨询服务。需以高效响应、专业解答、友好亲切为核心原则。
+# 系统提示词（简化版）
+SYSTEM_PROMPT = """你是大咖素质训练营的智能客服。知识库：
+- 大咖素质训练营，成立于2017年，创始人璐瑶妈妈
+- 典范英语是牛津树中国引进版，1-6级小学生，7-10级中学生
+- 14点前付款当天发货（周日除外），新疆西藏不发货
+- 课程为数字化商品，不支持退款
+- 咨询课程请引导用户留下联系方式
 
-## 大咖素质训练营客户问题与标准回复知识库
-
-品牌基础信息：
-- 全称：海南郡唐美育科技有限公司，对外宣传使用"大咖素质训练营"
-- 运营公司：海南郡唐美育科技有限公司
-- 成立时间：2017年
-- 使命：让每个孩子都享受高效学习的快乐
-- 愿景：成为中国家长最信任的在线教育平台
-- 官方APP：大咖素质训练营
-- 官网：https://www.dkzsxt.com
-
-创始人信息：
-- 创始人：璐瑶妈妈
-- 教育方法：树干学习法、城邦法、以教代学模式
-
-典范英语相关：
-- 典范英语是牛津树的中国引进版
-- 1-6级适合小学生，7-10级适合中学生
-- 每月14-17日和28-31日有相关活动
-
-订单与物流：
-- 14点前付款当天可发货（周日除外）
-- 新疆、西藏地区暂不能发货
-
-售后与退款：
-- 课程为数字化商品，暂不支持退款
-
-课程咨询引导：
-- 当用户咨询课程详情、报名流程、费用等，回复结尾加上：麻烦留下您的联系电话，我们会安排专属老师与您详细沟通
-
-## 限制
-- 仅处理客户与大咖素质训练营相关的咨询类问题
-- 回复严格基于上方知识库，不得编造
-- 回复简洁明了，单条不超过3行
-- 保持专业中立态度"""
+回复简洁友好，单条不超过3行。"""
 
 @app.route('/')
 def index():
@@ -80,8 +48,7 @@ def wechat():
         return "验证失败", 403
     
     if request.method == 'POST':
-        print("=" * 50, flush=True)
-        print("收到 POST 请求", flush=True)
+        print("收到 POST 请求")
         
         try:
             xml_data = request.data
@@ -91,15 +58,13 @@ def wechat():
             to_user = root.find('ToUserName').text
             msg_type = root.find('MsgType').text
             
-            print(f"消息类型: {msg_type}", flush=True)
-            
             if msg_type == 'text':
                 user_text = root.find('Content').text
-                print(f"用户消息: {user_text}", flush=True)
+                print(f"用户消息: {user_text}")
                 
-                reply_text = call_deepseek(user_text)
+                reply_text = call_zhipu(user_text)
                 
-                print(f"AI回复: {reply_text[:50]}...", flush=True)
+                print(f"AI回复: {reply_text[:100]}")
                 
                 reply_xml = f"""<xml>
 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -116,20 +81,18 @@ def wechat():
             return "success"
             
         except Exception as e:
-            print(f"处理消息出错: {e}", flush=True)
+            print(f"错误: {e}")
             return "success"
 
-def call_deepseek(user_message):
-    """调用 DeepSeek API"""
-    print("调用 DeepSeek API...", flush=True)
-    
+def call_zhipu(user_message):
+    """调用智谱清言 API"""
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {ZHIPU_API_KEY}",
         "Content-Type": "application/json"
     }
     
     payload = {
-        "model": "deepseek-chat",
+        "model": "glm-4-flash",  # 免费模型
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message}
@@ -138,20 +101,20 @@ def call_deepseek(user_message):
     }
     
     try:
-        response = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=15)
+        response = requests.post(ZHIPU_API_URL, json=payload, headers=headers, timeout=15)
         
-        print(f"DeepSeek 状态码: {response.status_code}", flush=True)
+        print(f"智谱状态码: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
             reply = result['choices'][0]['message']['content']
             return reply
         else:
-            print(f"DeepSeek 错误: {response.text[:200]}", flush=True)
+            print(f"智谱错误: {response.text[:200]}")
             return "AI服务暂时不可用，请稍后再试"
             
     except Exception as e:
-        print(f"DeepSeek 异常: {e}", flush=True)
+        print(f"智谱异常: {e}")
         return "系统繁忙，请稍后再试"
 
 if __name__ == '__main__':
