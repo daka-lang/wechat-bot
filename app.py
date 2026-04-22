@@ -12,7 +12,6 @@ app = Flask(__name__)
 WECHAT_TOKEN = "wechat123456"
 
 # ========== 防重复机制：记录用户最后一条消息和回复时间 ==========
-# 格式：{user_openid: {"message": "内容", "time": 时间戳}}
 last_reply_cache = {}
 
 # 防重复时间间隔（秒），同一内容在这个时间内不重复回复
@@ -42,12 +41,6 @@ KNOWLEDGE = {
     "app下载": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     "下载APP": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     "下载app": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
-    
-    # 课程找不到/无法登录（APP问题）
-    "课程找不到": "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。",
-    "无法登录": "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。",
-    "登录不上": "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。",
-    "找不到课程": "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。",
     
     # 收到/谢谢
     "谢谢": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
@@ -113,9 +106,24 @@ APP_ISSUE_KEYWORDS = [
     "课程打不开", "视频打不开", "内容加载失败"
 ]
 
+# ========== 购课咨询关键词 ==========
+COURSE_PURCHASE_KEYWORDS = [
+    "购课", "买课", "付费", "购买", "下单", "支付", "付款",
+    "怎么买", "怎么购", "如何购买", "如何购课",
+    "多少钱", "价格", "费用", "收费", "价位",
+    "想买", "想购", "要买", "要购"
+]
+
+# ========== 会员/课程问题关键词 ==========
+MEMBER_ISSUE_KEYWORDS = [
+    "会员到期", "会员过期", "会员失效",
+    "无法听故事", "听不了故事", "故事听不了", "故事播放不了",
+    "找不到课程", "课程不见了", "课程找不到了", "课程消失",
+    "会员怎么续", "会员续费", "续会员"
+]
+
 def is_phone_number(text):
     """判断文本中是否包含11位手机号"""
-    # 匹配11位数字（简单的手机号正则）
     phone_pattern = r'1[3-9]\d{9}'
     match = re.search(phone_pattern, text)
     return match is not None, match.group() if match else None
@@ -126,11 +134,9 @@ def is_duplicate_message(user_id, message):
     
     if user_id in last_reply_cache:
         last = last_reply_cache[user_id]
-        # 如果消息内容相同，且时间间隔小于设定值，认为是重复
         if last["message"] == message and (current_time - last["time"]) < DUPLICATE_INTERVAL:
             return True
     
-    # 更新缓存
     last_reply_cache[user_id] = {"message": message, "time": current_time}
     return False
 
@@ -139,6 +145,20 @@ def is_app_issue(text):
     text_lower = text.lower()
     for keyword in APP_ISSUE_KEYWORDS:
         if keyword in text_lower or keyword in text:
+            return True
+    return False
+
+def is_course_purchase(text):
+    """判断是否是购课相关咨询"""
+    for keyword in COURSE_PURCHASE_KEYWORDS:
+        if keyword in text:
+            return True
+    return False
+
+def is_member_issue(text):
+    """判断是否是会员/课程问题"""
+    for keyword in MEMBER_ISSUE_KEYWORDS:
+        if keyword in text:
             return True
     return False
 
@@ -177,23 +197,33 @@ def wechat():
                 user_text = root.find('Content').text
                 print(f"用户消息 [{from_user}]: {user_text}")
                 
-                # ========== 问题1：防重复机制 ==========
+                # 防重复机制
                 if is_duplicate_message(from_user, user_text):
                     print(f"重复消息，忽略回复")
-                    # 重复消息不回复，直接返回空
                     return "success"
                 
-                # ========== 问题2：识别手机号 ==========
+                # 优先识别手机号
                 has_phone, phone_num = is_phone_number(user_text)
                 if has_phone:
                     reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
                     print(f"识别到手机号: {phone_num}")
-                # ========== 问题3：APP问题 ==========
+                
+                # 识别APP问题
                 elif is_app_issue(user_text):
                     reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
                     print(f"识别到APP问题")
+                
+                # ========== 新增：购课咨询 ==========
+                elif is_course_purchase(user_text):
+                    reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
+                    print(f"识别到购课咨询")
+                
+                # ========== 新增：会员/课程问题 ==========
+                elif is_member_issue(user_text):
+                    reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                    print(f"识别到会员/课程问题")
+                
                 else:
-                    # 正常知识库匹配
                     reply_text = get_reply(user_text)
                 
                 print(f"回复: {reply_text[:50]}...")
@@ -218,13 +248,10 @@ def wechat():
 
 def get_reply(user_text):
     """根据关键词匹配回复"""
-    # 课程咨询类关键词（引导留电话）
-    course_keywords = ["报名", "费用", "怎么学", "多少钱", "怎么买", "上课", "学习", "咨询", "介绍"]
+    # 课程咨询类关键词（引导留电话）- 避免与购课咨询重复
+    course_keywords = ["报名", "怎么学", "上课"]
     for kw in course_keywords:
         if kw in user_text:
-            # 避免重复匹配已处理的关键词
-            if "课程详情" in user_text or "大语文课程" in user_text:
-                break
             return f"关于您的问题，内容比较丰富~为了更好地为您介绍，麻烦您留下联系电话，我会让班班与您详细沟通，为您推荐最合适的学习方案哦~"
     
     # 检查知识库中的关键词
