@@ -5,19 +5,59 @@ import hashlib
 import xml.etree.ElementTree as ET
 import time
 import re
-from collections import defaultdict
+import json
 
 app = Flask(__name__)
 
 WECHAT_TOKEN = "wechat123456"
 
-# ========== 防重复机制：记录用户最后一条消息和回复时间 ==========
+# ========== 防重复机制 ==========
 last_reply_cache = {}
-
-# 防重复时间间隔（秒），同一内容在这个时间内不重复回复
 DUPLICATE_INTERVAL = 10
 
-# ========== 知识库（关键词 -> 回复）==========
+# ========== 人工介入机制 ==========
+# 格式：{user_openid: {"status": "human", "time": 时间戳}}
+human_mode_cache = {}
+# 人工接管后，机器人不回复的时长（秒），默认24小时
+HUMAN_MODE_DURATION = 24 * 60 * 60
+
+def is_human_mode(user_id):
+    """判断用户是否处于人工接管模式"""
+    if user_id in human_mode_cache:
+        data = human_mode_cache[user_id]
+        # 检查是否超时
+        if time.time() - data["time"] < HUMAN_MODE_DURATION:
+            return True
+        else:
+            # 超时，清除标记
+            del human_mode_cache[user_id]
+    return False
+
+def set_human_mode(user_id):
+    """设置用户为人工接管模式（由人工客服触发）"""
+    human_mode_cache[user_id] = {"status": "human", "time": time.time()}
+    print(f"用户 {user_id} 已切换到人工接管模式")
+
+def clear_human_mode(user_id):
+    """清除人工接管模式（恢复机器人回复）"""
+    if user_id in human_mode_cache:
+        del human_mode_cache[user_id]
+        print(f"用户 {user_id} 已恢复机器人回复模式")
+
+# ========== 人工介入关键词（当用户发送这些内容时，可触发人工）==========
+HUMAN_TRIGGER_KEYWORDS = [
+    "转人工", "人工客服", "人工服务", "找真人", "真人客服",
+    "客服在吗", "有人在吗", "帮我转人工"
+]
+
+def is_request_human(text):
+    """判断用户是否请求转人工"""
+    for keyword in HUMAN_TRIGGER_KEYWORDS:
+        if keyword in text:
+            return True
+    return False
+
+# ========== 知识库 ==========
 KNOWLEDGE = {
     # 品牌信息
     "全称": "亲亲，咱们对外宣传使用'大咖素质训练营'，正式文件落款的全称是'海南郡唐美育科技有限公司'哦~",
@@ -30,10 +70,8 @@ KNOWLEDGE = {
     "官网": "亲亲，官方网址是 https://www.dkzsxt.com ~",
     "APP": "您好，官方APP叫'大咖素质训练营'，有阅读、表演、广播剧等多元化课程~",
     
-    # 投诉
+    # 投诉/退费
     "投诉": "很抱歉给您带来的不便，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
-    
-    # 退费
     "退费": "很抱歉给您带来的不便，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
     
     # APP下载
@@ -42,7 +80,7 @@ KNOWLEDGE = {
     "下载APP": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     "下载app": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     
-    # 收到/谢谢
+    # 感谢语
     "谢谢": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
     "感谢": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
     "收到": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
@@ -50,11 +88,9 @@ KNOWLEDGE = {
     # 天外飞仙
     "天外飞仙": "您是想了解怎么使用天外飞仙吗？这个可以跟您的班班沟通了解一下。",
     
-    # 英语情境法手工游戏
+    # 手工游戏
     "英语情境法手工游戏": "亲亲，英语情境法手工游戏可以咨询21天英语班班或者英语阅读群班班。",
     "英语手工游戏": "亲亲，英语情境法手工游戏可以咨询21天英语班班或者英语阅读群班班。",
-    
-    # 大语文手工游戏
     "大语文手工游戏": "您好，所有涉及大语文的手工游戏，都可以找领袖群班班沟通。",
     "语文手工游戏": "您好，所有涉及大语文的手工游戏，都可以找领袖群班班沟通。",
     
@@ -122,26 +158,22 @@ MEMBER_ISSUE_KEYWORDS = [
     "会员怎么续", "会员续费", "续会员"
 ]
 
+# ========== 辅助函数 ==========
 def is_phone_number(text):
-    """判断文本中是否包含11位手机号"""
     phone_pattern = r'1[3-9]\d{9}'
     match = re.search(phone_pattern, text)
     return match is not None, match.group() if match else None
 
 def is_duplicate_message(user_id, message):
-    """判断是否是重复消息（防重复机制）"""
     current_time = time.time()
-    
     if user_id in last_reply_cache:
         last = last_reply_cache[user_id]
         if last["message"] == message and (current_time - last["time"]) < DUPLICATE_INTERVAL:
             return True
-    
     last_reply_cache[user_id] = {"message": message, "time": current_time}
     return False
 
 def is_app_issue(text):
-    """判断是否是APP相关问题"""
     text_lower = text.lower()
     for keyword in APP_ISSUE_KEYWORDS:
         if keyword in text_lower or keyword in text:
@@ -149,14 +181,12 @@ def is_app_issue(text):
     return False
 
 def is_course_purchase(text):
-    """判断是否是购课相关咨询"""
     for keyword in COURSE_PURCHASE_KEYWORDS:
         if keyword in text:
             return True
     return False
 
 def is_member_issue(text):
-    """判断是否是会员/课程问题"""
     for keyword in MEMBER_ISSUE_KEYWORDS:
         if keyword in text:
             return True
@@ -165,6 +195,38 @@ def is_member_issue(text):
 @app.route('/')
 def index():
     return "微信机器人运行中", 200
+
+# ========== 人工客服接口（供人工客服调用）==========
+@app.route('/admin/set_human_mode', methods=['POST'])
+def api_set_human_mode():
+    """人工客服调用此接口，将用户切换到人工模式"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        if user_id:
+            set_human_mode(user_id)
+            return {"code": 0, "msg": f"用户 {user_id} 已切换到人工模式"}
+        return {"code": 1, "msg": "缺少 user_id"}, 400
+    except Exception as e:
+        return {"code": 1, "msg": str(e)}, 500
+
+@app.route('/admin/clear_human_mode', methods=['POST'])
+def api_clear_human_mode():
+    """人工客服调用此接口，将用户恢复机器人模式"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        if user_id:
+            clear_human_mode(user_id)
+            return {"code": 0, "msg": f"用户 {user_id} 已恢复机器人模式"}
+        return {"code": 1, "msg": "缺少 user_id"}, 400
+    except Exception as e:
+        return {"code": 1, "msg": str(e)}, 500
+
+@app.route('/admin/human_mode_list', methods=['GET'])
+def api_human_mode_list():
+    """查看当前人工模式用户列表"""
+    return {"code": 0, "data": list(human_mode_cache.keys())}
 
 @app.route('/wechat', methods=['GET', 'POST'])
 def wechat():
@@ -197,34 +259,46 @@ def wechat():
                 user_text = root.find('Content').text
                 print(f"用户消息 [{from_user}]: {user_text}")
                 
-                # 防重复机制
-                if is_duplicate_message(from_user, user_text):
-                    print(f"重复消息，忽略回复")
+                # ========== 检查用户是否在人工接管模式 ==========
+                if is_human_mode(from_user):
+                    print(f"用户 {from_user} 处于人工接管模式，机器人不回复")
+                    # 不回复，直接返回成功
                     return "success"
                 
-                # 优先识别手机号
-                has_phone, phone_num = is_phone_number(user_text)
-                if has_phone:
-                    reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
-                    print(f"识别到手机号: {phone_num}")
-                
-                # 识别APP问题
-                elif is_app_issue(user_text):
-                    reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
-                    print(f"识别到APP问题")
-                
-                # ========== 新增：购课咨询 ==========
-                elif is_course_purchase(user_text):
-                    reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
-                    print(f"识别到购课咨询")
-                
-                # ========== 新增：会员/课程问题 ==========
-                elif is_member_issue(user_text):
-                    reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
-                    print(f"识别到会员/课程问题")
-                
+                # ========== 检查是否请求转人工 ==========
+                if is_request_human(user_text):
+                    set_human_mode(from_user)
+                    reply_text = "好的，正在为您转接人工客服，请稍候~"
+                    print(f"用户请求转人工，已切换到人工模式")
                 else:
-                    reply_text = get_reply(user_text)
+                    # 防重复机制
+                    if is_duplicate_message(from_user, user_text):
+                        print(f"重复消息，忽略回复")
+                        return "success"
+                    
+                    # 优先识别手机号
+                    has_phone, phone_num = is_phone_number(user_text)
+                    if has_phone:
+                        reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
+                        print(f"识别到手机号: {phone_num}")
+                    
+                    # 识别APP问题
+                    elif is_app_issue(user_text):
+                        reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                        print(f"识别到APP问题")
+                    
+                    # 购课咨询
+                    elif is_course_purchase(user_text):
+                        reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
+                        print(f"识别到购课咨询")
+                    
+                    # 会员/课程问题
+                    elif is_member_issue(user_text):
+                        reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                        print(f"识别到会员/课程问题")
+                    
+                    else:
+                        reply_text = get_reply(user_text)
                 
                 print(f"回复: {reply_text[:50]}...")
                 
@@ -248,23 +322,19 @@ def wechat():
 
 def get_reply(user_text):
     """根据关键词匹配回复"""
-    # 课程咨询类关键词（引导留电话）- 避免与购课咨询重复
     course_keywords = ["报名", "怎么学", "上课"]
     for kw in course_keywords:
         if kw in user_text:
             return f"关于您的问题，内容比较丰富~为了更好地为您介绍，麻烦您留下联系电话，我会让班班与您详细沟通，为您推荐最合适的学习方案哦~"
     
-    # 检查知识库中的关键词
     for keyword, reply in KNOWLEDGE.items():
         if keyword in user_text:
             return reply
     
-    # 打招呼
     if any(word in user_text for word in ["你好", "您好", "嗨", "hi", "hello"]):
         return "您好~我是咖宝，请问有什么可以帮您的吗？"
     
-    # 默认回复
-    return f"您好，我是咖宝。请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
+    return f"收到：{user_text}\n\n我是咖宝，请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
