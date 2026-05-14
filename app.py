@@ -36,18 +36,18 @@ def is_human_mode(user_id):
 def set_human_mode(user_id):
     """设置用户为人工接管模式（由人工客服触发）"""
     human_mode_cache[user_id] = {"status": "human", "time": time.time()}
-    print(f"用户 {user_id} 已切换到人工接管模式")
+    print(f"✅ 用户 {user_id} 已切换到人工接管模式，机器人将停止回复")
 
 def clear_human_mode(user_id):
     """清除人工接管模式（恢复机器人回复）"""
     if user_id in human_mode_cache:
         del human_mode_cache[user_id]
-        print(f"用户 {user_id} 已恢复机器人回复模式")
+        print(f"✅ 用户 {user_id} 已恢复机器人回复模式")
 
-# ========== 人工介入关键词（当用户发送这些内容时，可触发人工）==========
+# ========== 人工介入关键词 ==========
 HUMAN_TRIGGER_KEYWORDS = [
     "转人工", "人工客服", "人工服务", "找真人", "真人客服",
-    "客服在吗", "有人在吗", "帮我转人工"
+    "客服在吗", "有人在吗", "帮我转人工", "我要找真人"
 ]
 
 def is_request_human(text):
@@ -59,7 +59,6 @@ def is_request_human(text):
 
 # ========== 知识库 ==========
 KNOWLEDGE = {
-    # 品牌信息
     "全称": "亲亲，咱们对外宣传使用'大咖素质训练营'，正式文件落款的全称是'海南郡唐美育科技有限公司'哦~",
     "运营": "您好，大咖素质训练营由海南郡唐美育科技有限公司运营，是海口市龙华区引进的科技龙头企业~",
     "成立": "您好，大咖素质训练营成立于2017年，至今已深耕素质教育领域多年~",
@@ -69,96 +68,47 @@ KNOWLEDGE = {
     "愿景": "您好，咱们的愿景是'成为中国家长最信任的在线教育平台'~",
     "官网": "亲亲，官方网址是 https://www.dkzsxt.com ~",
     "APP": "您好，官方APP叫'大咖素质训练营'，有阅读、表演、广播剧等多元化课程~",
-    
-    # 投诉/退费
     "投诉": "很抱歉给您带来的不便，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
     "退费": "很抱歉给您带来的不便，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
-    
-    # APP下载
     "APP下载": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     "app下载": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     "下载APP": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
     "下载app": "您可以前往应用商店搜索【大咖素质训练营APP】，各大商店均可下载。",
-    
-    # 感谢语
     "谢谢": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
     "感谢": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
     "收到": "感谢您对大咖素质训练营的支持，祝您生活愉快！",
-    
-    # 天外飞仙
     "天外飞仙": "您是想了解怎么使用天外飞仙吗？这个可以跟您的班班沟通了解一下。",
-    
-    # 手工游戏
     "英语情境法手工游戏": "亲亲，英语情境法手工游戏可以咨询21天英语班班或者英语阅读群班班。",
     "英语手工游戏": "亲亲，英语情境法手工游戏可以咨询21天英语班班或者英语阅读群班班。",
     "大语文手工游戏": "您好，所有涉及大语文的手工游戏，都可以找领袖群班班沟通。",
     "语文手工游戏": "您好，所有涉及大语文的手工游戏，都可以找领袖群班班沟通。",
-    
-    # 大语文课程
     "大语文课程": "您好，咱们的大语文课程内容丰富，涵盖阅读、写作、传统文化等模块，不同阶段适合不同年龄段的孩子。为了给您推荐适合的课程阶段，麻烦留下您的联系电话，后续有专属老师会根据孩子的年龄和学习基础，详细介绍课程内容和适合程度~",
-    
-    # 课程详情
     "课程详情": "您好，想了解课程详情，麻烦您先留下您的联系电话，后续有专属老师会与您联系~老师会根据您的需求，了解孩子的年龄、学习基础等信息后，为您详细介绍课程内容、上课方式、费用、优惠活动等详情，帮您选择合适的课程~",
-    
-    # 典范英语
     "典范英语": "亲亲，典范英语是牛津树的中国引进版，1-6级适合小学生，7-10级适合中学生~",
     "典范": "亲亲，典范英语每月14-17日和28-31日有活动~",
     "牛津树": "亲亲，典范英语就是牛津树的中国引进版，语言地道、趣味性强~",
     "典范几级": "亲亲，1-6级适合小学生，7-10级适合中学生~",
     "点读笔": "亲亲，典范英语仅支持弘书阁点读笔~",
-    
-    # 物流
     "发货": "亲亲，14点前付款当天可发货（周日除外），一般24小时内发货~",
     "新疆": "亲亲，非常抱歉，新疆地区目前暂不能发货~",
     "西藏": "亲亲，非常抱歉，西藏地区目前暂不能发货~",
     "物流": "亲亲，14点前付款当天发货，周日除外~",
-    
-    # 售后
     "退款": "亲亲，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
     "退货": "亲亲，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
     "售后": "亲亲，请您简述您遇到的问题，并留下您的联系方式，我们尽快与您取得联系。",
-    
-    # 发票
     "发票": "亲亲，购买后3个月内可以申请开发票，需提供订单号和开票信息~",
-    
-    # 优惠券
     "优惠券": "亲亲，优惠券由平台发放，平台客服电话是4000862867~",
-    
-    # 公益
     "公益": "亲亲，咱们2020年向武汉慈善总会捐赠过，还成立了'璐瑶妈妈扶贫解困特别公益助学金'~",
     "捐赠": "亲亲，咱们参与过多次公益捐赠，包括抗疫、抗洪、抗震等~",
-    
-    # 媒体报道
     "报道": "亲亲，咱们获得过光明网、新华社、人民网、人民日报等主流媒体报道~",
-    
-    # 社群
     "班班": "亲亲，如果您想找到您的班班，可以留下您的电话，我让班班和您联系",
 }
 
-# ========== APP问题关键词 ==========
-APP_ISSUE_KEYWORDS = [
-    "无法打开", "打不开", "闪退", "卡顿", "加载不了", "页面空白",
-    "APP打不开", "app打不开", "APP无法打开", "app无法打开",
-    "课程打不开", "视频打不开", "内容加载失败"
-]
+# ========== 问题分类关键词 ==========
+APP_ISSUE_KEYWORDS = ["无法打开", "打不开", "闪退", "卡顿", "加载不了", "页面空白", "APP打不开", "app打不开", "APP无法打开", "app无法打开", "课程打不开", "视频打不开", "内容加载失败"]
+COURSE_PURCHASE_KEYWORDS = ["购课", "买课", "付费", "购买", "下单", "支付", "付款", "怎么买", "怎么购", "如何购买", "如何购课", "多少钱", "价格", "费用", "收费", "价位", "想买", "想购", "要买", "要购"]
+MEMBER_ISSUE_KEYWORDS = ["会员到期", "会员过期", "会员失效", "无法听故事", "听不了故事", "故事听不了", "故事播放不了", "找不到课程", "课程不见了", "课程找不到了", "课程消失", "会员怎么续", "会员续费", "续会员"]
 
-# ========== 购课咨询关键词 ==========
-COURSE_PURCHASE_KEYWORDS = [
-    "购课", "买课", "付费", "购买", "下单", "支付", "付款",
-    "怎么买", "怎么购", "如何购买", "如何购课",
-    "多少钱", "价格", "费用", "收费", "价位",
-    "想买", "想购", "要买", "要购"
-]
-
-# ========== 会员/课程问题关键词 ==========
-MEMBER_ISSUE_KEYWORDS = [
-    "会员到期", "会员过期", "会员失效",
-    "无法听故事", "听不了故事", "故事听不了", "故事播放不了",
-    "找不到课程", "课程不见了", "课程找不到了", "课程消失",
-    "会员怎么续", "会员续费", "续会员"
-]
-
-# ========== 辅助函数 ==========
 def is_phone_number(text):
     phone_pattern = r'1[3-9]\d{9}'
     match = re.search(phone_pattern, text)
@@ -174,9 +124,8 @@ def is_duplicate_message(user_id, message):
     return False
 
 def is_app_issue(text):
-    text_lower = text.lower()
     for keyword in APP_ISSUE_KEYWORDS:
-        if keyword in text_lower or keyword in text:
+        if keyword in text:
             return True
     return False
 
@@ -196,37 +145,47 @@ def is_member_issue(text):
 def index():
     return "微信机器人运行中", 200
 
-# ========== 人工客服接口（供人工客服调用）==========
+# ========== 人工客服专用接口 ==========
 @app.route('/admin/set_human_mode', methods=['POST'])
 def api_set_human_mode():
-    """人工客服调用此接口，将用户切换到人工模式"""
+    """人工客服回复后，调用此接口，机器人将停止回复该用户"""
     try:
         data = request.get_json()
         user_id = data.get('user_id')
-        if user_id:
-            set_human_mode(user_id)
-            return {"code": 0, "msg": f"用户 {user_id} 已切换到人工模式"}
-        return {"code": 1, "msg": "缺少 user_id"}, 400
+        if not user_id:
+            return {"code": 1, "msg": "缺少 user_id"}, 400
+        
+        set_human_mode(user_id)
+        return {"code": 0, "msg": f"✅ 用户 {user_id} 已切换到人工模式，机器人将不再回复"}
     except Exception as e:
         return {"code": 1, "msg": str(e)}, 500
 
 @app.route('/admin/clear_human_mode', methods=['POST'])
 def api_clear_human_mode():
-    """人工客服调用此接口，将用户恢复机器人模式"""
+    """问题解决后，恢复机器人自动回复"""
     try:
         data = request.get_json()
         user_id = data.get('user_id')
-        if user_id:
-            clear_human_mode(user_id)
-            return {"code": 0, "msg": f"用户 {user_id} 已恢复机器人模式"}
-        return {"code": 1, "msg": "缺少 user_id"}, 400
+        if not user_id:
+            return {"code": 1, "msg": "缺少 user_id"}, 400
+        
+        clear_human_mode(user_id)
+        return {"code": 0, "msg": f"✅ 用户 {user_id} 已恢复机器人模式"}
     except Exception as e:
         return {"code": 1, "msg": str(e)}, 500
 
 @app.route('/admin/human_mode_list', methods=['GET'])
 def api_human_mode_list():
     """查看当前人工模式用户列表"""
-    return {"code": 0, "data": list(human_mode_cache.keys())}
+    users = []
+    for user_id, data in human_mode_cache.items():
+        remaining = HUMAN_MODE_DURATION - (time.time() - data["time"])
+        users.append({
+            "user_id": user_id,
+            "start_time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(data["time"])),
+            "remaining_hours": round(remaining / 3600, 1)
+        })
+    return {"code": 0, "data": users}
 
 @app.route('/wechat', methods=['GET', 'POST'])
 def wechat():
@@ -259,44 +218,32 @@ def wechat():
                 user_text = root.find('Content').text
                 print(f"用户消息 [{from_user}]: {user_text}")
                 
-                # ========== 检查用户是否在人工接管模式 ==========
+                # ========== 关键：检查是否在人工模式 ==========
                 if is_human_mode(from_user):
-                    print(f"用户 {from_user} 处于人工接管模式，机器人不回复")
-                    # 不回复，直接返回成功
+                    print(f"🚫 用户 {from_user} 处于人工接管模式，机器人不回复")
                     return "success"
                 
-                # ========== 检查是否请求转人工 ==========
+                # 检查是否请求转人工
                 if is_request_human(user_text):
                     set_human_mode(from_user)
                     reply_text = "好的，正在为您转接人工客服，请稍候~"
-                    print(f"用户请求转人工，已切换到人工模式")
+                    print(f"🔄 用户请求转人工，已切换到人工模式")
                 else:
                     # 防重复机制
                     if is_duplicate_message(from_user, user_text):
                         print(f"重复消息，忽略回复")
                         return "success"
                     
-                    # 优先识别手机号
+                    # 智能回复逻辑
                     has_phone, phone_num = is_phone_number(user_text)
                     if has_phone:
                         reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
-                        print(f"识别到手机号: {phone_num}")
-                    
-                    # 识别APP问题
                     elif is_app_issue(user_text):
                         reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
-                        print(f"识别到APP问题")
-                    
-                    # 购课咨询
                     elif is_course_purchase(user_text):
                         reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
-                        print(f"识别到购课咨询")
-                    
-                    # 会员/课程问题
                     elif is_member_issue(user_text):
                         reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
-                        print(f"识别到会员/课程问题")
-                    
                     else:
                         reply_text = get_reply(user_text)
                 
@@ -321,7 +268,6 @@ def wechat():
             return "success"
 
 def get_reply(user_text):
-    """根据关键词匹配回复"""
     course_keywords = ["报名", "怎么学", "上课"]
     for kw in course_keywords:
         if kw in user_text:
