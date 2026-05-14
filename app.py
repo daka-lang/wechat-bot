@@ -16,30 +16,23 @@ last_reply_cache = {}
 DUPLICATE_INTERVAL = 10
 
 # ========== 人工介入机制 ==========
-# 格式：{user_openid: {"status": "human", "time": 时间戳}}
 human_mode_cache = {}
-# 人工接管后，机器人不回复的时长（秒），默认24小时
 HUMAN_MODE_DURATION = 24 * 60 * 60
 
 def is_human_mode(user_id):
-    """判断用户是否处于人工接管模式"""
     if user_id in human_mode_cache:
         data = human_mode_cache[user_id]
-        # 检查是否超时
         if time.time() - data["time"] < HUMAN_MODE_DURATION:
             return True
         else:
-            # 超时，清除标记
             del human_mode_cache[user_id]
     return False
 
 def set_human_mode(user_id):
-    """设置用户为人工接管模式（由人工客服触发）"""
     human_mode_cache[user_id] = {"status": "human", "time": time.time()}
     print(f"✅ 用户 {user_id} 已切换到人工接管模式，机器人将停止回复")
 
 def clear_human_mode(user_id):
-    """清除人工接管模式（恢复机器人回复）"""
     if user_id in human_mode_cache:
         del human_mode_cache[user_id]
         print(f"✅ 用户 {user_id} 已恢复机器人回复模式")
@@ -51,7 +44,6 @@ HUMAN_TRIGGER_KEYWORDS = [
 ]
 
 def is_request_human(text):
-    """判断用户是否请求转人工"""
     for keyword in HUMAN_TRIGGER_KEYWORDS:
         if keyword in text:
             return True
@@ -104,7 +96,6 @@ KNOWLEDGE = {
     "班班": "亲亲，如果您想找到您的班班，可以留下您的电话，我让班班和您联系",
 }
 
-# ========== 问题分类关键词 ==========
 APP_ISSUE_KEYWORDS = ["无法打开", "打不开", "闪退", "卡顿", "加载不了", "页面空白", "APP打不开", "app打不开", "APP无法打开", "app无法打开", "课程打不开", "视频打不开", "内容加载失败"]
 COURSE_PURCHASE_KEYWORDS = ["购课", "买课", "付费", "购买", "下单", "支付", "付款", "怎么买", "怎么购", "如何购买", "如何购课", "多少钱", "价格", "费用", "收费", "价位", "想买", "想购", "要买", "要购"]
 MEMBER_ISSUE_KEYWORDS = ["会员到期", "会员过期", "会员失效", "无法听故事", "听不了故事", "故事听不了", "故事播放不了", "找不到课程", "课程不见了", "课程找不到了", "课程消失", "会员怎么续", "会员续费", "续会员"]
@@ -148,27 +139,23 @@ def index():
 # ========== 人工客服专用接口 ==========
 @app.route('/admin/set_human_mode', methods=['POST'])
 def api_set_human_mode():
-    """人工客服回复后，调用此接口，机器人将停止回复该用户"""
     try:
         data = request.get_json()
         user_id = data.get('user_id')
         if not user_id:
             return {"code": 1, "msg": "缺少 user_id"}, 400
-        
         set_human_mode(user_id)
-        return {"code": 0, "msg": f"✅ 用户 {user_id} 已切换到人工模式，机器人将不再回复"}
+        return {"code": 0, "msg": f"✅ 用户 {user_id} 已切换到人工模式"}
     except Exception as e:
         return {"code": 1, "msg": str(e)}, 500
 
 @app.route('/admin/clear_human_mode', methods=['POST'])
 def api_clear_human_mode():
-    """问题解决后，恢复机器人自动回复"""
     try:
         data = request.get_json()
         user_id = data.get('user_id')
         if not user_id:
             return {"code": 1, "msg": "缺少 user_id"}, 400
-        
         clear_human_mode(user_id)
         return {"code": 0, "msg": f"✅ 用户 {user_id} 已恢复机器人模式"}
     except Exception as e:
@@ -176,7 +163,6 @@ def api_clear_human_mode():
 
 @app.route('/admin/human_mode_list', methods=['GET'])
 def api_human_mode_list():
-    """查看当前人工模式用户列表"""
     users = []
     for user_id, data in human_mode_cache.items():
         remaining = HUMAN_MODE_DURATION - (time.time() - data["time"])
@@ -218,7 +204,7 @@ def wechat():
                 user_text = root.find('Content').text
                 print(f"用户消息 [{from_user}]: {user_text}")
                 
-                # ========== 关键：检查是否在人工模式 ==========
+                # 检查是否在人工模式
                 if is_human_mode(from_user):
                     print(f"🚫 用户 {from_user} 处于人工接管模式，机器人不回复")
                     return "success"
@@ -226,8 +212,9 @@ def wechat():
                 # 检查是否请求转人工
                 if is_request_human(user_text):
                     set_human_mode(from_user)
-                    reply_text = "好的，正在为您转接人工客服，请稍候~"
-                    print(f"🔄 用户请求转人工，已切换到人工模式")
+                    # 修改后的回复：告知用户已记录，人工会回复
+                    reply_text = "您好，您的留言已记录，我们会尽快安排人工客服与您联系，请耐心等待~"
+                    print(f"🔄 用户请求转人工，已切换到人工模式，等待人工回复")
                 else:
                     # 防重复机制
                     if is_duplicate_message(from_user, user_text):
