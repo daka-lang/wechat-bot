@@ -49,6 +49,21 @@ def is_request_human(text):
             return True
     return False
 
+# ========== 新增：特定触发关键词 ==========
+SPECIAL_TRIGGER_KEYWORDS = {
+    "了解课程": "你好，欢迎咨询！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~",
+    "咨询课程": "你好，欢迎咨询！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~",
+    "课程咨询": "你好，欢迎咨询！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~",
+    "我想咨询": "你好，欢迎咨询！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~",
+}
+
+def is_special_trigger(text):
+    """检查是否是特定触发关键词"""
+    for keyword, reply in SPECIAL_TRIGGER_KEYWORDS.items():
+        if keyword == text or keyword in text:
+            return True, reply
+    return False, None
+
 # ========== 知识库 ==========
 KNOWLEDGE = {
     "全称": "亲亲，咱们对外宣传使用'大咖素质训练营'，正式文件落款的全称是'海南郡唐美育科技有限公司'哦~",
@@ -212,27 +227,33 @@ def wechat():
                 # 检查是否请求转人工
                 if is_request_human(user_text):
                     set_human_mode(from_user)
-                    # 修改后的回复：告知用户已记录，人工会回复
                     reply_text = "您好，您的留言已记录，我们会尽快安排人工客服与您联系，请耐心等待~"
-                    print(f"🔄 用户请求转人工，已切换到人工模式，等待人工回复")
+                    print(f"🔄 用户请求转人工，已切换到人工模式")
+                
+                # ========== 新增：特定关键词触发（如“了解课程”）==========
                 else:
-                    # 防重复机制
-                    if is_duplicate_message(from_user, user_text):
-                        print(f"重复消息，忽略回复")
-                        return "success"
-                    
-                    # 智能回复逻辑
-                    has_phone, phone_num = is_phone_number(user_text)
-                    if has_phone:
-                        reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
-                    elif is_app_issue(user_text):
-                        reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
-                    elif is_course_purchase(user_text):
-                        reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
-                    elif is_member_issue(user_text):
-                        reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                    is_trigger, trigger_reply = is_special_trigger(user_text)
+                    if is_trigger:
+                        reply_text = trigger_reply
+                        print(f"🎯 识别到特定触发关键词: {user_text}")
                     else:
-                        reply_text = get_reply(user_text)
+                        # 防重复机制
+                        if is_duplicate_message(from_user, user_text):
+                            print(f"重复消息，忽略回复")
+                            return "success"
+                        
+                        # 智能回复逻辑
+                        has_phone, phone_num = is_phone_number(user_text)
+                        if has_phone:
+                            reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
+                        elif is_app_issue(user_text):
+                            reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                        elif is_course_purchase(user_text):
+                            reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
+                        elif is_member_issue(user_text):
+                            reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                        else:
+                            reply_text = get_reply(user_text)
                 
                 print(f"回复: {reply_text[:50]}...")
                 
