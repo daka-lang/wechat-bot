@@ -49,7 +49,7 @@ def is_request_human(text):
             return True
     return False
 
-# ========== 新增：特定触发关键词 ==========
+# ========== 特定触发关键词 ==========
 SPECIAL_TRIGGER_KEYWORDS = {
     "了解课程": "你好，欢迎咨询！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~",
     "咨询课程": "你好，欢迎咨询！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~",
@@ -58,7 +58,6 @@ SPECIAL_TRIGGER_KEYWORDS = {
 }
 
 def is_special_trigger(text):
-    """检查是否是特定触发关键词"""
     for keyword, reply in SPECIAL_TRIGGER_KEYWORDS.items():
         if keyword == text or keyword in text:
             return True, reply
@@ -151,7 +150,6 @@ def is_member_issue(text):
 def index():
     return "微信机器人运行中", 200
 
-# ========== 人工客服专用接口 ==========
 @app.route('/admin/set_human_mode', methods=['POST'])
 def api_set_human_mode():
     try:
@@ -219,30 +217,24 @@ def wechat():
                 user_text = root.find('Content').text
                 print(f"用户消息 [{from_user}]: {user_text}")
                 
-                # 检查是否在人工模式
                 if is_human_mode(from_user):
                     print(f"🚫 用户 {from_user} 处于人工接管模式，机器人不回复")
                     return "success"
                 
-                # 检查是否请求转人工
                 if is_request_human(user_text):
                     set_human_mode(from_user)
                     reply_text = "您好，您的留言已记录，我们会尽快安排人工客服与您联系，请耐心等待~"
                     print(f"🔄 用户请求转人工，已切换到人工模式")
-                
-                # ========== 新增：特定关键词触发（如“了解课程”）==========
                 else:
                     is_trigger, trigger_reply = is_special_trigger(user_text)
                     if is_trigger:
                         reply_text = trigger_reply
                         print(f"🎯 识别到特定触发关键词: {user_text}")
                     else:
-                        # 防重复机制
                         if is_duplicate_message(from_user, user_text):
                             print(f"重复消息，忽略回复")
                             return "success"
                         
-                        # 智能回复逻辑
                         has_phone, phone_num = is_phone_number(user_text)
                         if has_phone:
                             reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
@@ -276,19 +268,29 @@ def wechat():
             return "success"
 
 def get_reply(user_text):
+    # 明确咨询意图识别
+    consult_keywords = ["咨询", "想了解", "想咨询", "想学习", "想报名", "有兴趣", "考虑一下", "了解一下", "我也想"]
+    for kw in consult_keywords:
+        if kw in user_text:
+            return f"感谢您的关注！课程内容比较丰富，为了更好地为您介绍适合孩子的课程，麻烦留下您的联系电话，我们会让班班与您详细沟通~"
+    
+    # 课程相关关键词
     course_keywords = ["报名", "怎么学", "上课"]
     for kw in course_keywords:
         if kw in user_text:
             return f"关于您的问题，内容比较丰富~为了更好地为您介绍，麻烦您留下联系电话，我会让班班与您详细沟通，为您推荐最合适的学习方案哦~"
     
+    # 知识库匹配
     for keyword, reply in KNOWLEDGE.items():
         if keyword in user_text:
             return reply
     
+    # 打招呼
     if any(word in user_text for word in ["你好", "您好", "嗨", "hi", "hello"]):
         return "您好~我是咖宝，请问有什么可以帮您的吗？"
     
-    return f"收到：{user_text}\n\n我是咖宝，请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
+    # 默认回复（不再重复用户的话，直接引导）
+    return "我是咖宝，请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
