@@ -11,9 +11,58 @@ app = Flask(__name__)
 
 WECHAT_TOKEN = "wechat123456"
 
-# ========== 防重复机制 ==========
-last_reply_cache = {}
-DUPLICATE_INTERVAL = 10
+# ========== 防重复机制（升级版）==========
+# 记录用户最后回复时间
+user_last_reply_time = {}
+# 记录用户消息历史（用于频次限制）
+user_message_history = {}
+
+# 冷却时间（秒）：用户发送消息后，在这个时间内不回复第二条
+REPLY_COOLDOWN = 3
+# 时间窗口（秒）
+TIME_WINDOW = 10
+# 时间窗口内最大回复次数
+MAX_REPLIES_IN_WINDOW = 2
+
+def can_reply(user_id, message):
+    """判断是否可以回复（防重复+频次限制）"""
+    current_time = time.time()
+    
+    # 1. 冷却时间检查：用户刚发过消息，不回复
+    if user_id in user_last_reply_time:
+        time_since_last = current_time - user_last_reply_time[user_id]
+        if time_since_last < REPLY_COOLDOWN:
+            print(f"⏱️ 用户 {user_id} 在冷却期内（{time_since_last:.1f}秒），不回复")
+            return False
+    
+    # 2. 频次限制检查：时间窗口内回复次数过多
+    if user_id not in user_message_history:
+        user_message_history[user_id] = []
+    
+    # 清理过期记录
+    user_message_history[user_id] = [
+        t for t in user_message_history[user_id] 
+        if current_time - t < TIME_WINDOW
+    ]
+    
+    # 检查回复次数
+    if len(user_message_history[user_id]) >= MAX_REPLIES_IN_WINDOW:
+        print(f"⚠️ 用户 {user_id} 在{TIME_WINDOW}秒内回复次数过多，不回复")
+        return False
+    
+    # 3. 相似消息检查（可选：短时间内相同消息不回复）
+    # 这里简化处理，主要依靠冷却时间和频次限制
+    
+    return True
+
+def record_reply(user_id):
+    """记录一次回复"""
+    current_time = time.time()
+    user_last_reply_time[user_id] = current_time
+    
+    if user_id not in user_message_history:
+        user_message_history[user_id] = []
+    user_message_history[user_id].append(current_time)
 
 # ========== 人工介入机制 ==========
 human_mode_cache = {}
@@ -30,7 +79,7 @@ def is_human_mode(user_id):
 
 def set_human_mode(user_id):
     human_mode_cache[user_id] = {"status": "human", "time": time.time()}
-    print(f"✅ 用户 {user_id} 已切换到人工接管模式，机器人将停止回复")
+    print(f"✅ 用户 {user_id} 已切换到人工接管模式")
 
 def clear_human_mode(user_id):
     if user_id in human_mode_cache:
@@ -118,15 +167,6 @@ def is_phone_number(text):
     phone_pattern = r'1[3-9]\d{9}'
     match = re.search(phone_pattern, text)
     return match is not None, match.group() if match else None
-
-def is_duplicate_message(user_id, message):
-    current_time = time.time()
-    if user_id in last_reply_cache:
-        last = last_reply_cache[user_id]
-        if last["message"] == message and (current_time - last["time"]) < DUPLICATE_INTERVAL:
-            return True
-    last_reply_cache[user_id] = {"message": message, "time": current_time}
-    return False
 
 def is_app_issue(text):
     for keyword in APP_ISSUE_KEYWORDS:
@@ -217,24 +257,29 @@ def wechat():
                 user_text = root.find('Content').text
                 print(f"用户消息 [{from_user}]: {user_text}")
                 
+                # 检查人工模式
                 if is_human_mode(from_user):
                     print(f"🚫 用户 {from_user} 处于人工接管模式，机器人不回复")
                     return "success"
                 
+                # 检查转人工
                 if is_request_human(user_text):
                     set_human_mode(from_user)
                     reply_text = "您好，您的留言已记录，我们会尽快安排人工客服与您联系，请耐心等待~"
-                    print(f"🔄 用户请求转人工，已切换到人工模式")
+                    print(f"🔄 用户请求转人工")
+                    # 记录回复
+                    record_reply(from_user)
                 else:
+                    # ========== 防重复检查（核心修改）==========
+                    if not can_reply(from_user, user_text):
+                        print(f"🚫 防重复机制触发，不回复")
+                        return "success"
+                    
                     is_trigger, trigger_reply = is_special_trigger(user_text)
                     if is_trigger:
                         reply_text = trigger_reply
-                        print(f"🎯 识别到特定触发关键词: {user_text}")
+                        print(f"🎯 识别到特定触发关键词")
                     else:
-                        if is_duplicate_message(from_user, user_text):
-                            print(f"重复消息，忽略回复")
-                            return "success"
-                        
                         has_phone, phone_num = is_phone_number(user_text)
                         if has_phone:
                             reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
@@ -246,6 +291,9 @@ def wechat():
                             reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
                         else:
                             reply_text = get_reply(user_text)
+                    
+                    # 记录本次回复
+                    record_reply(from_user)
                 
                 print(f"回复: {reply_text[:50]}...")
                 
@@ -289,7 +337,7 @@ def get_reply(user_text):
     if any(word in user_text for word in ["你好", "您好", "嗨", "hi", "hello"]):
         return "您好~我是咖宝，请问有什么可以帮您的吗？"
     
-    # 默认回复（不再重复用户的话，直接引导）
+    # 默认回复
     return "我是咖宝，请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
 
 if __name__ == '__main__':
