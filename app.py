@@ -11,58 +11,38 @@ app = Flask(__name__)
 
 WECHAT_TOKEN = "wechat123456"
 
-# ========== 防重复机制（升级版）==========
-# 记录用户最后回复时间
-user_last_reply_time = {}
-# 记录用户消息历史（用于频次限制）
-user_message_history = {}
+# ========== 防重复机制 ==========
+# 记录用户最后回复时间和内容
+user_last_reply = {}  # {user_id: {"time": timestamp, "content": "回复内容"}}
 
-# 冷却时间（秒）：用户发送消息后，在这个时间内不回复第二条
-REPLY_COOLDOWN = 3
-# 时间窗口（秒）
-TIME_WINDOW = 10
-# 时间窗口内最大回复次数
-MAX_REPLIES_IN_WINDOW = 2
+# 冷却时间（秒）：用户收到回复后，在这个时间内不回复第二条
+REPLY_COOLDOWN = 15  # 延长到15秒
 
-def can_reply(user_id, message):
-    """判断是否可以回复（防重复+频次限制）"""
+def should_ignore_message(user_id, will_reply_content):
+    """判断是否应该忽略这条消息（不回复）- 只做冷却和重复检测"""
     current_time = time.time()
     
-    # 1. 冷却时间检查：用户刚发过消息，不回复
-    if user_id in user_last_reply_time:
-        time_since_last = current_time - user_last_reply_time[user_id]
+    # 1. 冷却时间检查
+    if user_id in user_last_reply:
+        last = user_last_reply[user_id]
+        time_since_last = current_time - last["time"]
         if time_since_last < REPLY_COOLDOWN:
-            print(f"⏱️ 用户 {user_id} 在冷却期内（{time_since_last:.1f}秒），不回复")
-            return False
+            print(f"⏱️ 冷却期内（{time_since_last:.1f}秒），不回复")
+            return True
+        
+        # 2. 检查是否要回复相同内容
+        if last.get("content") == will_reply_content:
+            print(f"🔄 上次回复内容相同，不重复回复")
+            return True
     
-    # 2. 频次限制检查：时间窗口内回复次数过多
-    if user_id not in user_message_history:
-        user_message_history[user_id] = []
-    
-    # 清理过期记录
-    user_message_history[user_id] = [
-        t for t in user_message_history[user_id] 
-        if current_time - t < TIME_WINDOW
-    ]
-    
-    # 检查回复次数
-    if len(user_message_history[user_id]) >= MAX_REPLIES_IN_WINDOW:
-        print(f"⚠️ 用户 {user_id} 在{TIME_WINDOW}秒内回复次数过多，不回复")
-        return False
-    
-    # 3. 相似消息检查（可选：短时间内相同消息不回复）
-    # 这里简化处理，主要依靠冷却时间和频次限制
-    
-    return True
+    return False
 
-def record_reply(user_id):
+def record_reply(user_id, reply_content):
     """记录一次回复"""
-    current_time = time.time()
-    user_last_reply_time[user_id] = current_time
-    
-    if user_id not in user_message_history:
-        user_message_history[user_id] = []
-    user_message_history[user_id].append(current_time)
+    user_last_reply[user_id] = {
+        "time": time.time(),
+        "content": reply_content
+    }
 
 # ========== 人工介入机制 ==========
 human_mode_cache = {}
@@ -259,7 +239,7 @@ def wechat():
                 
                 # 检查人工模式
                 if is_human_mode(from_user):
-                    print(f"🚫 用户 {from_user} 处于人工接管模式，机器人不回复")
+                    print(f"🚫 用户处于人工接管模式，机器人不回复")
                     return "success"
                 
                 # 检查转人工
@@ -267,33 +247,33 @@ def wechat():
                     set_human_mode(from_user)
                     reply_text = "您好，您的留言已记录，我们会尽快安排人工客服与您联系，请耐心等待~"
                     print(f"🔄 用户请求转人工")
-                    # 记录回复
-                    record_reply(from_user)
+                    record_reply(from_user, reply_text)
                 else:
-                    # ========== 防重复检查（核心修改）==========
-                    if not can_reply(from_user, user_text):
-                        print(f"🚫 防重复机制触发，不回复")
-                        return "success"
-                    
+                    # 先计算将要回复的内容
                     is_trigger, trigger_reply = is_special_trigger(user_text)
                     if is_trigger:
-                        reply_text = trigger_reply
+                        will_reply = trigger_reply
                         print(f"🎯 识别到特定触发关键词")
                     else:
                         has_phone, phone_num = is_phone_number(user_text)
                         if has_phone:
-                            reply_text = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
+                            will_reply = f"您好，电话【{phone_num}】已收到，我们会尽快与您取得联系。"
                         elif is_app_issue(user_text):
-                            reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                            will_reply = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
                         elif is_course_purchase(user_text):
-                            reply_text = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
+                            will_reply = "请问您想咨询课程信息吗？如需详细咨询，麻烦留下您的联系电话~"
                         elif is_member_issue(user_text):
-                            reply_text = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
+                            will_reply = "请您留下您的联系电话，我让后台同事帮您查询一下，尽快给您回复。"
                         else:
-                            reply_text = get_reply(user_text)
+                            will_reply = get_reply(user_text)
                     
-                    # 记录本次回复
-                    record_reply(from_user)
+                    # ========== 防重复检查 ==========
+                    if should_ignore_message(from_user, will_reply):
+                        print(f"🚫 防重复机制触发，不回复")
+                        return "success"
+                    
+                    reply_text = will_reply
+                    record_reply(from_user, reply_text)
                 
                 print(f"回复: {reply_text[:50]}...")
                 
